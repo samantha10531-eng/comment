@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>批量评价生成器</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f0f2f5;color:#333;height:100vh;overflow:hidden}
+.app{display:flex;height:100vh}
+/* 左侧面板 */
+.sidebar{width:340px;min-width:340px;background:#fff;border-right:1px solid #e0e0e0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-header{padding:18px 20px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center}
+.sidebar-header h1{font-size:18px;color:#1a1a1a}
+.sidebar-header .api-status{width:8px;height:8px;border-radius:50%;background:#ccc;display:inline-block;margin-left:8px;cursor:pointer}
+.sidebar-header .api-status.online{background:#52c41a}
+.sidebar-body{flex:1;overflow-y:auto;padding:16px 20px 20px}
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:13px;font-weight:600;color:#555;margin-bottom:4px}
+.form-group select,.form-group input[type=number]{width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;background:#fff;outline:none;transition:border-color .2s}
+.form-group select:focus,.form-group input:focus{border-color:#1677ff;box-shadow:0 0 0 2px rgba(22,119,255,.1)}
+.form-group textarea{width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;resize:vertical;min-height:60px;outline:none;font-family:inherit}
+.form-group textarea:focus{border-color:#1677ff;box-shadow:0 0 0 2px rgba(22,119,255,.1)}
+.form-row{display:flex;gap:10px}
+.form-row .form-group{flex:1}
+.btn{display:inline-flex;align-items:center;justify-content:center;padding:9px 18px;border:none;border-radius:6px;font-size:14px;font-weight:500;cursor:pointer;transition:all .2s}
+.btn-primary{background:#1677ff;color:#fff;width:100%}
+.btn-primary:hover{background:#4096ff}
+.btn-primary:disabled{background:#a0c4ff;cursor:not-allowed}
+.btn-primary.loading{position:relative;color:transparent}
+.btn-primary.loading::after{content:"";position:absolute;width:18px;height:18px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.btn-sm{padding:4px 10px;font-size:12px;border-radius:4px}
+.btn-outline{background:transparent;border:1px solid #d9d9d9;color:#555}
+.btn-outline:hover{border-color:#1677ff;color:#1677ff}
+.btn-copy{background:#f0f5ff;color:#1677ff;border:1px solid #d6e4ff}
+.btn-copy:hover{background:#e6f0ff}
+.btn-copied{background:#f6ffed;color:#52c41a;border-color:#b7eb8f}
+.count-input{width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;text-align:center;outline:none}
+.count-input:focus{border-color:#1677ff;box-shadow:0 0 0 2px rgba(22,119,255,.1)}
+.highlights-grid{display:flex;flex-wrap:wrap;gap:6px}
+.highlight-tag{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:4px;font-size:12px;cursor:pointer;border:1px solid #d9d9d9;background:#fff;transition:all .15s;user-select:none}
+.highlight-tag.active{background:#e6f4ff;border-color:#1677ff;color:#1677ff}
+/* 右侧主体 */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.main-header{padding:16px 24px;border-bottom:1px solid #e0e0e0;background:#fff;display:flex;justify-content:space-between;align-items:center}
+.main-header .stats{font-size:13px;color:#888}
+.main-body{flex:1;overflow-y:auto;padding:20px 24px}
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#bbb}
+.empty-state .icon{font-size:48px;margin-bottom:12px}
+.empty-state p{font-size:15px}
+/* 评价卡片 */
+.review-card{background:#fff;border-radius:8px;padding:14px 16px;margin-bottom:10px;border:1px solid #eee;position:relative;animation:fadeIn .3s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.review-card .review-index{position:absolute;top:8px;left:8px;width:22px;height:22px;border-radius:50%;background:#f0f5ff;color:#1677ff;font-size:11px;display:flex;align-items:center;justify-content:center;font-weight:600}
+.review-card .review-text{margin:0 40px 0 30px;line-height:1.65;font-size:14px;color:#333}
+.review-card .review-actions{position:absolute;top:8px;right:8px;display:flex;gap:4px}
+.review-card .review-tags{margin-top:8px;margin-left:30px;display:flex;gap:4px;flex-wrap:wrap}
+.review-card .review-tags span{font-size:11px;padding:2px 8px;border-radius:3px;background:#f5f5f5;color:#999}
+/* 设置弹窗 */
+.modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal{background:#fff;border-radius:10px;padding:24px;width:440px;max-width:90vw;box-shadow:0 8px 40px rgba(0,0,0,.15)}
+.modal h2{font-size:17px;margin-bottom:16px}
+.modal .form-group{margin-bottom:12px}
+.modal .form-group input{width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;outline:none}
+.modal .form-group input:focus{border-color:#1677ff}
+.modal .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
+.modal .modal-actions .btn{padding:7px 16px;font-size:13px}
+/* 提示气泡 */
+.toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);padding:10px 24px;border-radius:8px;font-size:14px;z-index:2000;animation:toastIn .3s ease;box-shadow:0 4px 20px rgba(0,0,0,.12)}
+.toast.success{background:#f6ffed;color:#52c41a;border:1px solid #b7eb8f}
+.toast.error{background:#fff2f0;color:#ff4d4f;border:1px solid #ffccc7}
+@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+/* 滚动条 */
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#d9d9d9;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#bbb}
+/* 快捷按钮组 */
+.quick-actions{display:flex;gap:6px;margin-top:12px}
+.quick-actions .btn{flex:1;font-size:12px;padding:7px 0}
+/* 底栏提示 */
+.sidebar-footer{padding:10px 20px 14px;border-top:1px solid #eee;font-size:11px;color:#bbb;text-align:center;line-height:1.5}
+.sidebar-footer a{color:#bbb;text-decoration:none}
+.sidebar-footer a:hover{color:#1677ff}
+@media(max-width:768px){.app{flex-direction:column}.sidebar{width:100%;min-width:auto;max-height:50vh;border-right:none;border-bottom:1px solid #e0e0e0}.main{height:50vh}}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- 左侧配置面板 -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <h1>📝 评价生成器</h1>
+      <span class="api-status" id="apiStatus" title="点击设置API" onclick="openSettings()"></span>
+    </div>
+    <div class="sidebar-body">
+      <div class="form-group">
+        <label>品类</label>
+        <select id="category" onchange="onCategoryChange()">
+          <option value="battery_original">手机电池-原装</option>
+          <option value="battery_capacity">手机电池-大容量</option>
+          <option value="back_glass">手机后壳玻璃</option>
+          <option value="screen">手机内/外屏</option>
+          <option value="laptop_repair">笔记本维修</option>
+          <option value="desktop_repair">台式机维修</option>
+          <option value="pc_build">电脑装机</option>
+          <option value="ac_recharge">空调加氟</option>
+          <option value="ac_repair">空调故障维修</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>故障/服务场景</label>
+        <select id="scenario"></select>
+      </div>
+      <div class="form-group">
+        <label>用户身份</label>
+        <select id="persona"></select>
+      </div>
+      <div class="form-group">
+        <label>口吻风格</label>
+        <select id="tone"></select>
+      </div>
+      <div class="form-group">
+        <label>服务亮点（点击可切换）</label>
+        <div class="highlights-grid" id="highlightsGrid"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>生成条数</label>
+          <input class="count-input" type="number" id="count" value="5" min="1" max="10">
+        </div>
+      </div>
+      <button class="btn btn-primary" id="generateBtn" onclick="generate()">🚀 批量生成</button>
+      <div class="quick-actions">
+        <button class="btn btn-outline" onclick="clearAll()">🗑️ 清空</button>
+        <button class="btn btn-outline" onclick="copyAll()">📋 复制全部</button>
+      </div>
+    </div>
+    <div class="sidebar-footer">
+      <a href="javascript:openSettings()">⚙️ API设置</a>
+    </div>
+  </div>
+
+  <!-- 右侧主区域 -->
+  <div class="main">
+    <div class="main-header">
+      <span>生成结果 <span class="stats" id="stats">(0 条)</span></span>
+      <span style="font-size:12px;color:#999" id="modelInfo"></span>
+    </div>
+    <div class="main-body" id="resultArea">
+      <div class="empty-state">
+        <div class="icon">📝</div>
+        <p>配置参数后点击「批量生成」</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 设置弹窗 -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal">
+    <h2>⚙️ API 设置</h2>
+    <div class="form-group">
+      <label>API 地址</label>
+      <input type="text" id="apiEndpoint" placeholder="https://api.openai.com/v1/chat/completions">
+    </div>
+    <div class="form-group">
+      <label>API Key</label>
+      <input type="password" id="apiKey" placeholder="sk-...">
+    </div>
+    <div class="form-group">
+      <label>模型名称</label>
+      <input type="text" id="apiModel" placeholder="gpt-4o / deepseek-chat">
+    </div>
+    <div class="form-group" style="margin-top:8px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="customPromptToggle" onchange="toggleCustomPrompt()"> 自定义提示词
+      </label>
+    </div>
+    <div class="form-group" id="customPromptGroup" style="display:none">
+      <label>自定义提示词模板</label>
+      <textarea id="customPrompt" rows="6" style="width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;resize:vertical;font-family:inherit;outline:none">你是一个3C维修公司的真实客户，正在写好评。\n维修品类：{category}\n故障场景：{scenario}\n你的身份：{persona}\n口吻：{tone}\n服务亮点：{highlights}\n产品详情：{details}\n要求：真实口语化、突出解决痛点、每条字数60-150字。直接输出好评正文。</textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeSettings()">取消</button>
+      <button class="btn btn-primary" style="width:auto" onclick="saveSettings()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ==================== 数据（基于需求Excel配置）====================
+
+const CATEGORIES = {
+  battery_original: {
+    name: '手机电池-原装',
+    details: '原装正品：健康度100%、设置里可查正品部件、官网可查、跑诊断。30分钟换好。全国联保、质保。',
+    scenarios: [
+      '电池健康掉到80%以下，耗电快',
+      '手机异常耗电、发烫掉帧',
+      '电池跳电，一天充好几次',
+      '手机反应慢、电池老化',
+      '换后健康度不涨，怀疑非正品',
+      '防水胶没贴好，担心进水',
+    ],
+    defaultHighlights: ['上门快', '原装正品可查', '师傅专业', '保修180天', '安装速度30分钟', '师傅态度好', '师傅更换之后会测试', '当天就上门', '维修时间灵活', '服务及时', '快速响应', '一口价'],
+  },
+  battery_capacity: {
+    name: '手机电池-大容量',
+    details: '续航强：一天一充，早出晚归还有40%。适用场景：游戏、刷短视频、导航、拍照。30分钟换好。365天质保。',
+    scenarios: [
+      '电池不耐用，一天充三次',
+      '玩游戏掉电极快',
+      '外出导航/拍照电量撑不住',
+      '电池老化，续航严重缩水',
+      '换了大容量电池手机变重了',
+      '大容量电池能不能用住',
+    ],
+    defaultHighlights: ['上门快', '续航强劲', '师傅专业', '365天质保', '维修前报价确认', '安装速度30分钟', '师傅态度好', '师傅更换之后会测试', '当天就上门', '维修时间灵活', '服务及时', '快速响应', '一口价'],
+  },
+  back_glass: {
+    name: '手机后壳玻璃',
+    details: '质量好、手感好、和原装一样。不小心摔了依旧完整。朋友看不出来换过。和手机完美贴合、颜值在线。不影响其他功能。',
+    scenarios: [
+      '后壳玻璃摔碎/裂了',
+      '后壳玻璃磨损划痕',
+      '后壳玻璃碎裂扎手',
+      '换电池顺带更换后壳',
+    ],
+    defaultHighlights: ['上门快', '手感同原装', '师傅专业', '完美贴合', '维修过程全程可视', '安装速度30分钟', '师傅态度好', '师傅更换之后会测试', '当天就上门', '维修时间灵活', '服务及时', '快速响应', '一口价'],
+  },
+  screen: {
+    name: '手机内/外屏',
+    details: '外屏：触摸不灵、漂移、无法触摸。内屏：黑屏、显示不全、异常白条、黑斑、漏液、竖条花纹、彩虹纹。',
+    scenarios: [
+      '屏幕摔裂/破碎',
+      '触摸不灵、漂移',
+      '黑屏、显示异常',
+      '屏幕有黑斑、漏液',
+    ],
+    defaultHighlights: ['上门快', '原装品质', '师傅专业', '维修前报价确认', '维修过程全程可视', '安装速度30分钟', '师傅态度好', '师傅更换之后会测试', '当天就上门', '维修时间灵活', '服务及时', '快速响应', '一口价'],
+  },
+  laptop_repair: {
+    name: '笔记本维修',
+    details: '故障：蓝屏、黑屏、不开机、死机、键盘失灵、C面烫手。收费合理、不乱收费。找问题迅速、1小时内修好。',
+    scenarios: [
+      '笔记本蓝屏/黑屏不开机',
+      '运行卡顿、死机',
+      '键盘失灵、个别按键报废',
+      'C面烫手，无法放在腿上用',
+      '合盖无法睡眠/唤醒黑屏',
+      '进水清理检修',
+      '清灰换硅脂',
+    ],
+    defaultHighlights: ['上门快', '1小时修好', '师傅专业', '数据保密承诺', '安装速度30分钟', '师傅态度好', '师傅更换之后会测试', '当天就上门', '维修时间灵活', '服务及时', '快速响应', '一口价'],
+  },
+  desktop_repair: {
+    name: '台式机维修',
+    details: '故障：蓝屏、黑屏、不开机、死机。收费合理、价格优惠。找问题迅速、1小时内修好。台式机不方便送修，上门维修省心。',
+    scenarios: [
+      '台式机无法开机',
+      '频繁蓝屏/死机',
+      '运行卡顿、升级硬件',
+      '黑屏、显示器无信号',
+      '数据误删、硬盘坏道恢复',
+    ],
+    defaultHighlights: ['上门维修省心', '1小时修好', '师傅专业', '数据保密承诺', '安装速度30分钟', '师傅态度好', '师傅更换之后会测试', '当天就上门', '维修时间灵活', '服务及时', '快速响应', '一口价'],
+  },
+  pc_build: {
+    name: '电脑装机',
+    details: '价格比其他家便宜、师傅技术好。一次点亮成功、走线规整、灯光酷炫。长时间使用不卡顿、不发烫。适用：打游戏、剪辑PS/PR。',
+    scenarios: [
+      'DIY配件上门装机+理线',
+      '水冷装机（散热好、RGB灯光）',
+      '风冷装机（静音、无漏液风险）',
+      'RGB光污染太刺眼，调暗',
+      '完美背线整理',
+      '升级配置+旧机数据迁移',
+    ],
+    defaultHighlights: ['上门快', '一次点亮', '走线规整', '价格实惠', '数据保密承诺', '安装速度30分钟', '师傅态度好', '师傅更换之后会测试', '当天就上门', '维修时间灵活', '服务及时', '快速响应', '一口价'],
+  },
+  ac_recharge: {
+    name: '空调加氟',
+    details: '加氟后制冷极佳、运行安静。价格便宜、花小钱解决大问题。可以上门。一口价不乱收费。解决氟泄漏、漏水、F0代码。',
+    scenarios: [
+      '空调不制冷，需要加氟',
+      '空调制冷效果差',
+      '空调显示F0故障代码',
+      '空调氟泄漏、漏水',
+    ],
+    defaultHighlights: ['上门快', '一口价', '制冷效果立竿见影', '维修前报价确认', '安装速度30分钟', '师傅态度好', '师傅更换之后会测试', '当天就上门', '维修时间灵活', '服务及时', '快速响应'],
+  },
+  ac_repair: {
+    name: '空调故障维修',
+    details: '故障：不运行/不开机、不制冷/不制热、显示代码、有异味、有异响/噪音大、漏水、漏氟。联系及时、上门快、收费低、有质保。',
+    scenarios: [
+      '空调完全不开机/不运行',
+      '空调有异味异响',
+      '空调漏水检修',
+      '空调显示故障代码',
+      '外机噪音扰民被投诉',
+      '制冷吹出霉味',
+      '遥控器失灵',
+    ],
+    defaultHighlights: ['上门快', '收费合理', '师傅专业', '维修前报价确认', '安装速度30分钟', '师傅态度好', '师傅更换之后会测试', '当天就上门', '维修时间灵活', '服务及时', '快速响应', '一口价'],
+  },
+};
+
+const PERSONAS = [
+  { id: 'office', name: '上班族', desc: '忙碌，注重效率和服务速度，没时间折腾' },
+  { id: 'student', name: '大学生', desc: '预算敏感，怕被坑，喜欢直来直去' },
+  { id: 'mom', name: '宝妈', desc: '家里有小孩，注重细节和卫生，担心安全问题' },
+  { id: 'uncle', name: '中年大叔', desc: '实用主义，反感套路和加价，认准了就一直找' },
+  { id: 'elderly', name: '退休长辈', desc: '不太懂这些，怕被坑，实在就好，信赖专业人士' },
+  { id: 'girl', name: '独居女生', desc: '注重安全和信任，怕乱收费，对个人隐私敏感' },
+  { id: 'gamer', name: '游戏宅', desc: '追求效果，喜欢干脆利落，对设备性能要求高' },
+  { id: 'renter', name: '租房打工人', desc: '省钱省心，怕麻烦，设备不是自己的也得上心' },
+  { id: 'admin', name: '企业行政/采购', desc: '负责公司设备维护，需要发票报销，看重流程正规和数据保密' },
+  { id: 'blogger', name: '数码博主/主播', desc: '直播设备出问题急需修好，外观要无损，可能会拍摄维修过程' },
+  { id: 'tourist', name: '外地游客', desc: '旅途中手机/电脑突发故障当天要离城，急需快速修复' },
+  { id: 'couple', name: '情侣/夫妻', desc: '一方陪同另一方来维修，怕被建议换新机，需要信任感' },
+];
+
+
+const TONES = [
+  { id: 'straight', name: '直爽派', desc: '语气直接，有啥说啥，不啰嗦，干脆利落' },
+  { id: 'simple', name: '简约派', desc: '话少，简短，一句到位，不拖泥带水' },
+  { id: 'detail', name: '细节控', desc: '关注服务过程中的小细节，观察入微' },
+  { id: 'teasing', name: '调侃派', desc: '带点幽默，轻松活泼，开个玩笑但不过分' },
+  { id: 'honest', name: '实在派', desc: '朴实真诚，像邻家大哥大姐，不吹不黑' },
+  { id: 'urgent', name: '着急派', desc: '语气紧迫，突出快、及时、救急，频繁使用时间词（几分钟/一小时）' },
+  { id: 'savemoney', name: '省钱派', desc: '强调比官方便宜很多、没有隐藏收费、性价比高，多用对比和具体数字' },
+  { id: 'transparent', name: '透明派', desc: '强调维修过程可见、报价透明、亲眼验证，用看到/录像/确认等词' },
+  { id: 'nostalgic', name: '怀旧派', desc: '突出旧设备不舍得扔，修好再用两年的情怀，多用年限词' },
+  { id: 'technical', name: '专业术语派', desc: '使用工具名、工艺名、参数等专业词汇，突出师傅技术过硬' },
+  { id: 'loyal', name: '依赖派', desc: '强调多次复购、只信任这家、老客户了，体现长期关系' },
+];
+
+// ==================== 状态 ====================
+let highlights = [];
+
+// ==================== 初始化 ====================
+function onCategoryChange() {
+  const catKey = document.getElementById('category').value;
+  const cat = CATEGORIES[catKey];
+  const sel = document.getElementById('scenario');
+  sel.innerHTML = cat.scenarios.map(s => `<option value="${s}">${s}</option>`).join('');
+  // 重置亮点
+  highlights = [...cat.defaultHighlights];
+  renderHighlights();
+}
+
+function renderHighlights() {
+  const container = document.getElementById('highlightsGrid');
+  container.innerHTML = highlights.map((h, i) =>
+    `<span class="highlight-tag active" onclick="toggleHighlight(${i})">${h}</span>`
+  ).join('');
+}
+
+function toggleHighlight(idx) {
+  const tags = document.querySelectorAll('#highlightsGrid .highlight-tag');
+  tags[idx].classList.toggle('active');
+}
+
+function getSelectedHighlights() {
+  const tags = document.querySelectorAll('#highlightsGrid .highlight-tag');
+  const result = [];
+  tags.forEach(t => { if (t.classList.contains('active')) result.push(t.textContent); });
+  return result.length > 0 ? result : highlights;
+}
+
+function populateSelects() {
+  // 场景
+  onCategoryChange();
+  // 身份
+  const pSel = document.getElementById('persona');
+  pSel.innerHTML = PERSONAS.map(p =>
+    `<option value="${p.id}|${p.desc}">${p.name}</option>`
+  ).join('');
+  // 口吻
+  const tSel = document.getElementById('tone');
+  tSel.innerHTML = TONES.map(t =>
+    `<option value="${t.id}|${t.desc}">${t.name}</option>`
+  ).join('');
+}
+
+// ==================== 设置 ====================
+function openSettings() {
+  document.getElementById('settingsModal').classList.add('show');
+  loadSettingsToUI();
+}
+function closeSettings() {
+  document.getElementById('settingsModal').classList.remove('show');
+}
+function toggleCustomPrompt() {
+  document.getElementById('customPromptGroup').style.display =
+    document.getElementById('customPromptToggle').checked ? 'block' : 'none';
+}
+
+function loadSettingsToUI() {
+  const s = JSON.parse(localStorage.getItem('reviewGenSettings') || '{}');
+  document.getElementById('apiEndpoint').value = s.endpoint || 'https://api.deepseek.com/v1/chat/completions';
+  document.getElementById('apiKey').value = s.key || '';
+  document.getElementById('apiModel').value = s.model || 'deepseek-chat';
+  if (s.customPrompt) {
+    document.getElementById('customPromptToggle').checked = true;
+    document.getElementById('customPromptGroup').style.display = 'block';
+    document.getElementById('customPrompt').value = s.customPrompt;
+  }
+}
+
+function saveSettings() {
+  const endpoint = document.getElementById('apiEndpoint').value.trim();
+  const key = document.getElementById('apiKey').value.trim();
+  const model = document.getElementById('apiModel').value.trim();
+  if (!endpoint || !key || !model) {
+    showToast('请填写完整的API配置', 'error');
+    return;
+  }
+  const s = { endpoint, key, model };
+  if (document.getElementById('customPromptToggle').checked) {
+    s.customPrompt = document.getElementById('customPrompt').value.trim();
+  }
+  localStorage.setItem('reviewGenSettings', JSON.stringify(s));
+  checkApiStatus();
+  closeSettings();
+  showToast('设置已保存', 'success');
+}
+
+function checkApiStatus() {
+  const s = JSON.parse(localStorage.getItem('reviewGenSettings') || '{}');
+  const dot = document.getElementById('apiStatus');
+  if (s.endpoint && s.key) {
+    dot.className = 'api-status online';
+    dot.title = 'API已配置';
+  } else {
+    dot.className = 'api-status';
+    dot.title = '点击配置API';
+  }
+}
+
+// ==================== 生成 ====================
+async function generate() {
+  const settings = JSON.parse(localStorage.getItem('reviewGenSettings') || '{}');
+  if (!settings.endpoint || !settings.key) {
+    showToast('请先配置API', 'error');
+    openSettings();
+    return;
+  }
+
+  const catKey = document.getElementById('category').value;
+  const cat = CATEGORIES[catKey];
+  const scenario = document.getElementById('scenario').value;
+  const personaEl = document.getElementById('persona');
+  const [personaName, personaDesc] = personaEl.value.split('|');
+  const toneEl = document.getElementById('tone');
+  const [toneName, toneDesc] = toneEl.value.split('|');
+  const count = parseInt(document.getElementById('count').value) || 5;
+  const selHighlights = getSelectedHighlights();
+  const highlightsStr = selHighlights.join('、');
+
+  const btn = document.getElementById('generateBtn');
+  btn.disabled = true;
+  btn.className = 'btn btn-primary loading';
+
+  try {
+    let prompt;
+    const cp = document.getElementById('customPromptToggle').checked;
+    if (cp && settings.customPrompt) {
+      prompt = settings.customPrompt
+        .replace(/\{category\}/g, cat.name)
+        .replace(/\{details\}/g, cat.details || '')
+        .replace(/\{count\}/g, count)
+        .replace(/\{scenario\}/g, scenario)
+        .replace(/\{persona\}/g, personaName)
+        .replace(/\{tone\}/g, toneName)
+        .replace(/\{highlights\}/g, highlightsStr);
+    } else {
+      prompt = `生成${count}条用户评价。以下是背景资料：
+
+【品类】${cat.name}
+【产品详情】${cat.details || ''}
+【服务场景】${scenario}
+【主要卖点】${highlightsStr}
+【用户画像】${personaName}（${personaDesc}）
+【语气建议】${toneName}（${toneDesc}）
+
+写的时候严格遵守：\n1. 每条字数60-150字，保证有具体细节，字数不够可以加场景描述或口语铺垫扩充\n2. 每条的开头、句式、结构必须不同，不允许两条用同样的方式开头\n3. 切入角度分散开：价格/速度/效果/态度/对比别家/解决了具体问题\n4. 所选口吻必须体现在文字中（着急=时间词，省钱=价格对比，透明=可见可查，怀旧=感情年限，专业=术语参数，依赖=复购信任）\n5. 如选中了服务亮点要在评价中提及\n6. 像真人随手评的，不要太书面\n7. 说价格时只能用模糊表达（比别家便宜、一口价、价格合适、性价比高、报价透明等），不要出现任何具体数字\n8. 直接输出，一条一行，不要序号`;
+    }
+
+    const response = await fetch(settings.endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${settings.key}`,
+      },
+      body: JSON.stringify({
+        model: settings.model,
+        messages: [
+          { role: 'system', content: '你是一个写真实用户评价的助手。要求非常严格：\n1. 每条评价的切入角度、开头句式、口吻结构都要不同，不能重复。\n2. 每条字数60-150字，保证有具体细节（具体问题、服务过程、前后对比），字数不够用场景描述或口语铺垫扩充。\n3. 所选口吻风格必须明确体现：着急派要用时间词（分钟/小时）、省钱派用价格对比（官方/别家）、透明派用看到/录像/报价单、怀旧派用设备年限、专业术语派用至少2个专业名词、依赖派用多次/一直/老客户等词。\n4. 如果用户选中了某个服务亮点（如维修前报价确认、维修过程全程可视等），该亮点必须在评价中正面提及。\n5. 根据身份匹配核心痛点：独居女生→隐私/安全、企业行政→发票/流程、游客→时间紧迫、博主→可拍摄/外观无损，这些痛点在评价中要自然体现。\n6. 口语化，不要书面语，不要每条都用感叹号，每条角度不同。\n7. 表达价格时只能用模糊表达，如"比别家便宜""一口价""价格合适""性价比高""报价实惠""价格透明"等，绝对不要出现具体数字（如多少钱、几百块、几十元等）。' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 1.0,
+        max_tokens: count * 300 + 300,
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`API请求失败 (${response.status}): ${err}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || data.content?.[0]?.text || '';
+    if (!content) throw new Error('API返回内容为空');
+
+    // 解析结果
+    const lines = content.split('\n').map(l => l.trim()).filter(l => l.length > 10);
+    // 去掉可能的序号前缀
+    const reviews = lines.map(l => l.replace(/^\d+[\.、\)]\s*/, '').replace(/^["']|["']$/g, ''));
+    document.getElementById('modelInfo').textContent = `模型: ${data.model || settings.model}`;
+    displayResults(reviews);
+
+  } catch (e) {
+    showToast('生成失败：' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.className = 'btn btn-primary';
+  }
+}
+
+function displayResults(reviews) {
+  const area = document.getElementById('resultArea');
+  if (!reviews || reviews.length === 0) {
+    area.innerHTML = '<div class="empty-state"><div class="icon">😕</div><p>未生成有效评价，请重试</p></div>';
+    return;
+  }
+  // 去重
+  const unique = [...new Set(reviews)];
+  area.innerHTML = unique.map((r, i) => `
+    <div class="review-card">
+      <div class="review-index">${i + 1}</div>
+      <div class="review-text">${r}</div>
+      <div class="review-tags">
+        <span>${document.getElementById('category').selectedOptions[0].textContent}</span>
+      </div>
+      <div class="review-actions">
+        <button class="btn-sm btn-copy" onclick="copySingle(this, \`${r.replace(/`/g,'\\`').replace(/\$/g,'\\$')}\`)">复制</button>
+      </div>
+    </div>
+  `).join('');
+  document.getElementById('stats').textContent = `(${unique.length} 条)`;
+  // 保存到历史
+  saveHistory(unique);
+}
+
+// ==================== 操作 ====================
+async function copySingle(btn, text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    btn.textContent = '已复制';
+    btn.className = 'btn-sm btn-copied';
+    setTimeout(() => { btn.textContent = '复制'; btn.className = 'btn-sm btn-copy'; }, 1500);
+  } catch {
+    showToast('复制失败', 'error');
+  }
+}
+
+async function copyAll() {
+  const texts = document.querySelectorAll('.review-card .review-text');
+  if (!texts.length) { showToast('没有可复制的内容', 'error'); return; }
+  const all = Array.from(texts).map(t => t.textContent).join('\n\n');
+  try {
+    await navigator.clipboard.writeText(all);
+    showToast('已复制全部 ' + texts.length + ' 条', 'success');
+  } catch {
+    showToast('复制失败', 'error');
+  }
+}
+
+function clearAll() {
+  const area = document.getElementById('resultArea');
+  area.innerHTML = '<div class="empty-state"><div class="icon">📝</div><p>配置参数后点击「批量生成」</p></div>';
+  document.getElementById('stats').textContent = '(0 条)';
+}
+
+// ==================== 历史 ====================
+function saveHistory(reviews) {
+  const key = 'reviewGenHistory';
+  let history = JSON.parse(localStorage.getItem(key) || '[]');
+  const entry = {
+    time: new Date().toLocaleString(),
+    category: document.getElementById('category').selectedOptions[0].textContent,
+    count: reviews.length,
+    reviews,
+  };
+  history.unshift(entry);
+  if (history.length > 100) history = history.slice(0, 100);
+  localStorage.setItem(key, JSON.stringify(history));
+}
+
+// ==================== Toast ====================
+function showToast(msg, type) {
+  const old = document.querySelector('.toast');
+  if (old) old.remove();
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => { if (t.parentNode) t.remove(); }, 2500);
+}
+
+// ==================== 启动 ====================
+populateSelects();
+checkApiStatus();
+
+// 点击弹窗外关闭
+document.getElementById('settingsModal').addEventListener('click', function(e) {
+  if (e.target === this) closeSettings();
+});
+</script>
+</body>
+</html>
